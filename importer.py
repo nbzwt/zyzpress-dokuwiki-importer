@@ -12,6 +12,7 @@ imageRoot = 'dokuwiki/data/media'
 blogList = []
 tagList = []
 catList = []
+slugList = []
 
 def procDir(rootDir):
 	for lists in os.listdir(rootDir):
@@ -44,7 +45,8 @@ def procEntity(blogEntity):
 	blogEntity['content'] = {'encoding': 'HTML', 'content': content}
 	del blogEntity['path']
 	blogEntity['category'] = 'Uncategorized'
-	blogEntity['tags'] = [];	
+	blogEntity['tags'] = []	
+	blogEntity['slug'] = ''
 	f.close()
 
 def getTags():
@@ -86,25 +88,23 @@ def getCat():
 		ncat = catList[x-1]
 	return ncat
 
-def setCatTags(blogEntity):
-	retry = True
-	print('Aritcle: ', blogEntity['title'])
-	while retry:
-		category = getCat()
-		tags = getTags()
-		print('Category: ', category, ' Tags: ', tags)
-		if input('Looks good?(y/n) ') == 'y':
-			retry = False
-	blogEntity['category'] = category
-	blogEntity['tags'] = tags	
+def checkList():
+	for blogEntity in blogList:
+		slug = blogEntity['slug']
+		if slug == '':
+			print('Error: ', blogEntity['title'], ' has a null slug.')
+			return False
+	return True
 
 def writeDb():
-	client = MongoClient('localhost', 27017)
-	db = client['blog']
-	db.posts.remove({})
-	result = db.posts.insert_many(blogList)
-	print("Finished. Inserted ids:")
-	print(result.inserted_ids)
+	if checkList():
+		client = MongoClient('localhost', 27017)
+		db = client['blog']
+		if input('Do you want to remove all pre-existing entries?(y/n) ') == 'y':
+			db.posts.remove({})
+		result = db.posts.insert_many(blogList)
+		print("Finished. Inserted ids:")
+		print(result.inserted_ids)
 
 def date(blogEntity):
 	return blogEntity['date'].timestamp()
@@ -123,8 +123,8 @@ def render(blogEntity):
 	tempht = open('tempht')
 	content = tempht.read();
 	content = content.replace('/./dokuwiki/bin/lib/exe/fetch.php?media=', 'img/')
-	#handle more. Add it after the second occurance of </p>
-	more = content.find('</p>', content.find('</p>') + 1)
+	#handle more. Add it after the third occurance of </p>
+	more = content.find('</p>', content.find('</p>', content.find('</p>') + 1) + 1)
 	if (more != -1):
 		more = more + 4
 		content = content[:more] + '\n<!-- more -->\n' + content[more:]
@@ -134,6 +134,8 @@ def render(blogEntity):
 	os.remove('tempdk')
 
 def copyPhoto(rootDir):
+	if not os.path.exists('img'):
+			os.makedirs('img')
 	for lists in os.listdir(rootDir):
 		path = os.path.join(rootDir, lists)
 		if os.path.isdir(path):
@@ -142,19 +144,80 @@ def copyPhoto(rootDir):
 			dstFile = path[len(imageRoot)+1:].replace('/',':')
 			shutil.copy(path, 'img/'+dstFile)
 
+def setCatMenu():
+	for blogEntity in blogList:
+		if blogEntity['category'] == 'Uncategorized':
+			retry = True
+			print('Article: ', blogEntity['title'])
+			while retry:
+				category = getCat()
+				print('Category: ', category)
+				if input('Looks good?(y/n) ') == 'y':
+					retry = False
+			blogEntity['category'] = category
+
+def setTagMenu():
+	for blogEntity in blogList:
+		if blogEntity['tags'] == []:
+			retry = True
+			print('Article: ', blogEntity['title'])
+			while retry:
+				tags = getTags()
+				print('Tags: ', tags)
+				if input('Looks good?(y/n) ') == 'y':
+					retry = False
+			blogEntity['tags'] = tags	
+
+def setSlugMenu():
+	for blogEntity in blogList:
+		if blogEntity['slug'] == '':
+			retry = True
+			print('Article: ', blogEntity['title'])
+			while retry:
+				slug = input('Input a new slug: ')
+				if slug in slugList:
+					print('This slug already exist! Pick another.')
+				elif input('Looks good?(y/n) ') == 'y':
+					retry = False
+			blogEntity['slug'] = slug
+			slugList.append(slug)
+
 def loadJson():
-	fjson = open('posts.json')
-	jlist = json.loads(fjson.read())
+	fname = input('Enter file name: (posts.json) ')
+	if fname == '':
+		fname = 'posts.json'
+	fjson = open(fname)
+	tjson = '[' + fjson.read()
 	fjson.close()
+	tjson = tjson.replace('}\n', '},\n')
+	tjson = tjson[:-2] + ']'
+	jlist = json.loads(tjson)
 	for jsonEntity in jlist:
 		title = jsonEntity['title']
-		tags = jsonEntity['tags']
-		category = jsonEntity['category']
 		for blogEntity in blogList:
 			if (blogEntity['title'] == title):
-				print('Importing category ', category, 'and tags ', tags, ' for blog entity ', title, '.')
-				blogEntity['tags'] = tags
-				blogEntity['category'] = category
+				print('Importing for blog entity ', title, '.')
+				try:
+					tags = jsonEntity['tags']
+					blogEntity['tags'] = tags
+					for tag in tags:
+						if tag not in tagList:
+							tagList.append(tag)
+				except KeyError:
+					print('No tags for this entity in JSON. ')
+				try:
+					category = jsonEntity['category']
+					blogEntity['category'] = category
+					if category not in catList:
+						catList.append(category)
+				except KeyError:
+					print('No category for this entity in JSON. ')
+				try:
+					slug = jsonEntity['slug']
+					blogEntity['slug'] = slug
+					slugList.append(slug)
+				except KeyError:
+					print('No slug for this entity in JSON. ')		
 
 def main():
 	procDir(blogRoot)
@@ -165,17 +228,27 @@ def main():
 	for blogEntity in blogList:
 		render(blogEntity)
 	print('Rendered.')
-	if input('Do you want to copy the image folder?(y/n) ') == 'y':
-		if not os.path.exists('img'):
-			os.makedirs('img')
-		copyPhoto(imageRoot)
-	if input('Want to import the json?(y/n) ') == 'y':
-		loadJson()
-	if input('Want to change the category and tags?(y/n) ') == 'y':
-		for blogEntity in blogList:
-			setCatTags(blogEntity)
-	if input('Write result to db (This will OVERWRITE the existing db!)?(y/n) ') == 'y':
-		writeDb()
+
+	options = { 1 : loadJson,
+				2 : setCatMenu,
+				3 : setTagMenu,
+				4 : setSlugMenu,
+				5 : copyPhoto,
+				6 : writeDb }
+
+	selection = 1
+	while (selection != 0):
+		print('Menu: ')
+		print('1. Import Json')
+		print('2. Change Category...')
+		print('3. Change Tags...')
+		print('4. Change Slug...')
+		print('5. Copy Photo')
+		print('6. Writed to DB')
+		print('0. Exit')
+		selection = int(input(''))
+		if (selection != 0):
+			options[selection]()
 
 if __name__ == '__main__':
 	main()
