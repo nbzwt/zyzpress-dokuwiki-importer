@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+#-*- coding: utf-8 -*-
 import os
 from datetime import datetime
 from pymongo import MongoClient
@@ -122,7 +122,7 @@ def render(blogEntity):
 	tempht.close()
 	tempht = open('tempht')
 	content = tempht.read();
-	content = content.replace('/./dokuwiki/bin/lib/exe/fetch.php?media=', 'img/')
+	content = content.replace('/./dokuwiki/bin/lib/exe/fetch.php?media=', 'http://zephray.cnvintage.org/img/')
 	#handle more. Add it after the third occurance of </p>
 	more = content.find('</p>', content.find('</p>', content.find('</p>') + 1) + 1)
 	if (more != -1):
@@ -219,6 +219,9 @@ def loadJson():
 				except KeyError:
 					print('No slug for this entity in JSON. ')		
 
+def copyPhotoWrapper():
+	copyPhoto(imageRoot)
+
 def main():
 	procDir(blogRoot)
 	blogList.sort(key = date, reverse=True)
@@ -233,7 +236,7 @@ def main():
 				2 : setCatMenu,
 				3 : setTagMenu,
 				4 : setSlugMenu,
-				5 : copyPhoto,
+				5 : copyPhotoWrapper,
 				6 : writeDb }
 
 	selection = 1
